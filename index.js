@@ -86,6 +86,71 @@ async function run() {
       }
     });
 
+    // Teacher applications endpoint
+    app.post("/teacher-applications", async (req, res) => {
+      try {
+        const { uid, name, email, photoURL, title, experience, category } =
+          req.body;
+
+        // Validate required fields
+        if (!uid || !name || !email || !title || !experience || !category) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing required fields",
+          });
+        }
+
+        // Get teacher applications collection
+        const teacherApplicationsCollection = database.collection(
+          "teacher-applications"
+        );
+
+        // Check if user already has a pending or approved application
+        const existingApplication = await teacherApplicationsCollection.findOne(
+          {
+            uid,
+          }
+        );
+        if (existingApplication) {
+          return res.status(409).json({
+            success: false,
+            message: "You have already submitted a teaching application",
+          });
+        }
+
+        // Create application document
+        const applicationDoc = {
+          uid,
+          name,
+          email,
+          photoURL: photoURL || "",
+          title,
+          experience,
+          category,
+          status: "pending",
+          appliedAt: new Date(),
+          reviewedAt: null,
+          reviewedBy: null,
+        };
+
+        // Insert application into database
+        const result = await teacherApplicationsCollection.insertOne(
+          applicationDoc
+        );
+
+        res.status(201).json({
+          success: true,
+          message: "Teaching application submitted successfully",
+          applicationId: result.insertedId,
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
     // Get user by UID endpoint
     app.get("/users/:uid", async (req, res) => {
       try {
