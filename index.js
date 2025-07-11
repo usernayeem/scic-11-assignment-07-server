@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -175,6 +175,122 @@ async function run() {
         });
       }
     });
+
+    // Get all teacher applications
+    app.get("/teacher-applications", async (req, res) => {
+      try {
+        const teacherApplicationsCollection = database.collection("teacher-applications");
+        const applications = await teacherApplicationsCollection
+          .find({})
+          .sort({ appliedAt: -1 })
+          .toArray();
+        
+        res.json({
+          success: true,
+          applications
+        });
+        
+      } catch (error) {
+        console.error("Error fetching teacher applications:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error"
+        });
+      }
+    });
+
+    // Update teacher application status
+    app.patch("/teacher-applications/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status } = req.body;
+        
+        // Validate status
+        if (!['approved', 'rejected'].includes(status)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid status. Must be 'approved' or 'rejected'"
+          });
+        }
+        
+        const teacherApplicationsCollection = database.collection("teacher-applications");
+        
+        const result = await teacherApplicationsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              status,
+              reviewedAt: new Date()
+            }
+          }
+        );
+        
+        if (result.matchedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Application not found"
+          });
+        }
+        
+        res.json({
+          success: true,
+          message: `Application ${status} successfully`
+        });
+        
+      } catch (error) {
+        console.error("Error updating application:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error"
+        });
+      }
+    });
+
+    // Update user role
+    app.patch("/users/:uid", async (req, res) => {
+      try {
+        const { uid } = req.params;
+        const { role } = req.body;
+        
+        // Validate role
+        if (!['student', 'teacher', 'admin'].includes(role)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid role"
+          });
+        }
+        
+        const result = await usersCollection.updateOne(
+          { uid },
+          {
+            $set: {
+              role,
+              updatedAt: new Date()
+            }
+          }
+        );
+        
+        if (result.matchedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "User not found"
+          });
+        }
+        
+        res.json({
+          success: true,
+          message: "User role updated successfully"
+        });
+        
+      } catch (error) {
+        console.error("Error updating user role:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error"
+        });
+      }
+    });
+
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
