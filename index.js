@@ -179,22 +179,23 @@ async function run() {
     // Get all teacher applications
     app.get("/teacher-applications", async (req, res) => {
       try {
-        const teacherApplicationsCollection = database.collection("teacher-applications");
+        const teacherApplicationsCollection = database.collection(
+          "teacher-applications"
+        );
         const applications = await teacherApplicationsCollection
           .find({})
           .sort({ appliedAt: -1 })
           .toArray();
-        
+
         res.json({
           success: true,
-          applications
+          applications,
         });
-        
       } catch (error) {
         console.error("Error fetching teacher applications:", error);
         res.status(500).json({
           success: false,
-          message: "Internal server error"
+          message: "Internal server error",
         });
       }
     });
@@ -204,44 +205,45 @@ async function run() {
       try {
         const { id } = req.params;
         const { status } = req.body;
-        
+
         // Validate status
-        if (!['approved', 'rejected'].includes(status)) {
+        if (!["approved", "rejected"].includes(status)) {
           return res.status(400).json({
             success: false,
-            message: "Invalid status. Must be 'approved' or 'rejected'"
+            message: "Invalid status. Must be 'approved' or 'rejected'",
           });
         }
-        
-        const teacherApplicationsCollection = database.collection("teacher-applications");
-        
+
+        const teacherApplicationsCollection = database.collection(
+          "teacher-applications"
+        );
+
         const result = await teacherApplicationsCollection.updateOne(
           { _id: new ObjectId(id) },
           {
             $set: {
               status,
-              reviewedAt: new Date()
-            }
+              reviewedAt: new Date(),
+            },
           }
         );
-        
+
         if (result.matchedCount === 0) {
           return res.status(404).json({
             success: false,
-            message: "Application not found"
+            message: "Application not found",
           });
         }
-        
+
         res.json({
           success: true,
-          message: `Application ${status} successfully`
+          message: `Application ${status} successfully`,
         });
-        
       } catch (error) {
         console.error("Error updating application:", error);
         res.status(500).json({
           success: false,
-          message: "Internal server error"
+          message: "Internal server error",
         });
       }
     });
@@ -251,46 +253,65 @@ async function run() {
       try {
         const { uid } = req.params;
         const { role } = req.body;
-        
+
         // Validate role
-        if (!['student', 'teacher', 'admin'].includes(role)) {
+        if (!["student", "teacher", "admin"].includes(role)) {
           return res.status(400).json({
             success: false,
-            message: "Invalid role"
+            message: "Invalid role",
           });
         }
-        
+
         const result = await usersCollection.updateOne(
           { uid },
           {
             $set: {
               role,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           }
         );
-        
+
         if (result.matchedCount === 0) {
           return res.status(404).json({
             success: false,
-            message: "User not found"
+            message: "User not found",
           });
         }
-        
+
         res.json({
           success: true,
-          message: "User role updated successfully"
+          message: "User role updated successfully",
         });
-        
       } catch (error) {
         console.error("Error updating user role:", error);
         res.status(500).json({
           success: false,
-          message: "Internal server error"
+          message: "Internal server error",
         });
       }
     });
 
+    // Get all users endpoint
+    app.get("/users", async (req, res) => {
+      try {
+        const users = await usersCollection
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.json({
+          success: true,
+          users,
+        });
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
