@@ -312,6 +312,218 @@ async function run() {
         });
       }
     });
+
+    // Create a new class endpoint
+    app.post("/classes", async (req, res) => {
+      try {
+        const {
+          title,
+          teacherName,
+          teacherEmail,
+          teacherUid,
+          price,
+          description,
+          image,
+        } = req.body;
+
+        // Get classes collection
+        const classesCollection = database.collection("classes");
+
+        // Create class document
+        const classDoc = {
+          title,
+          teacherName,
+          teacherEmail,
+          teacherUid,
+          price: parseFloat(price),
+          description,
+          image,
+          status: "pending",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          enrolledStudents: [],
+        };
+
+        // Insert class into database
+        const result = await classesCollection.insertOne(classDoc);
+
+        res.status(201).json({
+          success: true,
+          message: "Class created successfully and awaiting approval",
+          classId: result.insertedId,
+        });
+      } catch (error) {
+        console.error("Error creating class:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Get all classes endpoint
+    app.get("/classes", async (req, res) => {
+      try {
+        const classesCollection = database.collection("classes");
+        const classes = await classesCollection
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.json({
+          success: true,
+          classes,
+        });
+      } catch (error) {
+        console.error("Error fetching classes:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Get classes by teacher UID
+    app.get("/classes/teacher/:uid", async (req, res) => {
+      try {
+        const { uid } = req.params;
+        const classesCollection = database.collection("classes");
+        const classes = await classesCollection
+          .find({ teacherUid: uid })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.json({
+          success: true,
+          classes,
+        });
+      } catch (error) {
+        console.error("Error fetching teacher classes:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Update class status (for admin approval/rejection)
+    app.patch("/classes/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        // Validate status
+        if (!["approved", "rejected", "pending"].includes(status)) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid status. Must be 'approved', 'rejected', or 'pending'",
+          });
+        }
+
+        const classesCollection = database.collection("classes");
+
+        const result = await classesCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              status,
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Class not found",
+          });
+        }
+
+        res.json({
+          success: true,
+          message: `Class ${status} successfully`,
+        });
+      } catch (error) {
+        console.error("Error updating class:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Delete class endpoint
+    app.delete("/classes/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const classesCollection = database.collection("classes");
+
+        const result = await classesCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Class not found",
+          });
+        }
+
+        res.json({
+          success: true,
+          message: "Class deleted successfully",
+        });
+      } catch (error) {
+        console.error("Error deleting class:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Update class content (for teachers)
+    app.patch("/classes/:id/content", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { title, price, description, image } = req.body;
+
+        // Validate required fields
+        if (!title || price === undefined || !description || !image) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing required fields",
+          });
+        }
+
+        const classesCollection = database.collection("classes");
+
+        const result = await classesCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              title,
+              price: parseFloat(price),
+              description,
+              image,
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        res.json({
+          success: true,
+          message: "Class updated successfully",
+        });
+      } catch (error) {
+        console.error("Error updating class content:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
