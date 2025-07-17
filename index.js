@@ -524,6 +524,44 @@ async function run() {
         });
       }
     });
+
+    // Get single class by ID
+    app.get("/classes/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        // Validate ObjectId format
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid class ID format",
+          });
+        }
+
+        const classesCollection = database.collection("classes");
+        const classData = await classesCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!classData) {
+          return res.status(404).json({
+            success: false,
+            message: "Class not found",
+          });
+        }
+
+        res.json({
+          success: true,
+          class: classData,
+        });
+      } catch (error) {
+        console.error("Error fetching class details:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
