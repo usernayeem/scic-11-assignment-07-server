@@ -860,6 +860,96 @@ async function run() {
         });
       }
     });
+
+    // Create assignment
+    app.post("/assignments", async (req, res) => {
+      try {
+        const { classId, teacherUid, title, deadline, description, createdAt } =
+          req.body;
+
+        // Validate required fields
+        if (!classId || !teacherUid || !title || !deadline || !description) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing required fields",
+          });
+        }
+
+        const assignmentsCollection = database.collection("assignments");
+
+        const assignmentDoc = {
+          classId,
+          teacherUid,
+          title,
+          deadline: new Date(deadline),
+          description,
+          createdAt: new Date(createdAt),
+          updatedAt: new Date(),
+        };
+
+        const result = await assignmentsCollection.insertOne(assignmentDoc);
+
+        res.status(201).json({
+          success: true,
+          message: "Assignment created successfully",
+          assignmentId: result.insertedId,
+        });
+      } catch (error) {
+        console.error("Error creating assignment:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Get assignments for a class
+    app.get("/assignments/class/:classId", async (req, res) => {
+      try {
+        const { classId } = req.params;
+        const assignmentsCollection = database.collection("assignments");
+
+        const assignments = await assignmentsCollection
+          .find({ classId })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.json({
+          success: true,
+          assignments,
+        });
+      } catch (error) {
+        console.error("Error fetching assignments:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Get submissions for a class
+    app.get("/submissions/class/:classId", async (req, res) => {
+      try {
+        const { classId } = req.params;
+        const submissionsCollection = database.collection("submissions");
+
+        const submissions = await submissionsCollection
+          .find({ classId })
+          .sort({ submittedAt: -1 })
+          .toArray();
+
+        res.json({
+          success: true,
+          submissions,
+        });
+      } catch (error) {
+        console.error("Error fetching submissions:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
