@@ -562,6 +562,304 @@ async function run() {
         });
       }
     });
+
+    // Process payment and enroll student
+    app.post("/payments", async (req, res) => {
+      try {
+        const {
+          classId,
+          studentUid,
+          studentName,
+          studentEmail,
+          amount,
+          paymentMethodId,
+          transactionId,
+        } = req.body;
+
+        // Validate required fields
+        if (!classId || !studentUid || !amount || !transactionId) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing required payment fields",
+          });
+        }
+
+        // Check if class exists and is approved
+        const classesCollection = database.collection("classes");
+        const classData = await classesCollection.findOne({
+          _id: new ObjectId(classId),
+        });
+
+        if (!classData) {
+          return res.status(404).json({
+            success: false,
+            message: "Class not found",
+          });
+        }
+
+        if (classData.status !== "approved") {
+          return res.status(400).json({
+            success: false,
+            message: "Class is not available for enrollment",
+          });
+        }
+
+        // Check if student is already enrolled
+        if (
+          classData.enrolledStudents &&
+          classData.enrolledStudents.includes(studentUid)
+        ) {
+          return res.status(409).json({
+            success: false,
+            message: "Student is already enrolled in this class",
+          });
+        }
+
+        // Store payment transaction
+        const paymentsCollection = database.collection("payments");
+        const paymentDoc = {
+          transactionId,
+          classId,
+          studentUid,
+          studentName,
+          studentEmail,
+          amount: parseFloat(amount),
+          paymentMethod: "stripe",
+          paymentMethodId: paymentMethodId || null,
+          status: "completed",
+          createdAt: new Date(),
+        };
+
+        const paymentResult = await paymentsCollection.insertOne(paymentDoc);
+
+        // Add student to class enrollment
+        await classesCollection.updateOne(
+          { _id: new ObjectId(classId) },
+          {
+            $addToSet: { enrolledStudents: studentUid },
+            $set: { updatedAt: new Date() },
+          }
+        );
+
+        res.status(201).json({
+          success: true,
+          message: "Payment successful and enrolled in class",
+          paymentId: paymentResult.insertedId,
+          transactionId,
+        });
+      } catch (error) {
+        console.error("Error processing payment:", error);
+        res.status(500).json({
+          success: false,
+          message: "Payment processing failed",
+        });
+      }
+    });
+
+    // Get enrolled classes for a student
+    app.get("/students/:uid/enrolled-classes", async (req, res) => {
+      try {
+        const { uid } = req.params;
+        const classesCollection = database.collection("classes");
+
+        // Find all classes where the student is enrolled
+        const enrolledClasses = await classesCollection
+          .find({
+            enrolledStudents: uid,
+            status: "approved",
+          })
+          .sort({ updatedAt: -1 })
+          .toArray();
+
+        res.json({
+          success: true,
+          classes: enrolledClasses,
+        });
+      } catch (error) {
+        console.error("Error fetching enrolled classes:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Get payment history for a student
+    app.get("/students/:uid/payments", async (req, res) => {
+      try {
+        const { uid } = req.params;
+        const paymentsCollection = database.collection("payments");
+
+        const payments = await paymentsCollection
+          .find({ studentUid: uid })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.json({
+          success: true,
+          payments,
+        });
+      } catch (error) {
+        console.error("Error fetching payment history:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+    // Create payment intent
+    app.post("/create-payment-intent", async (req, res) => {
+      try {
+        const { amount, currency = "usd", classId, studentUid } = req.body;
+
+        const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: Math.round(amount * 100), // Stripe expects cents
+          currency: currency,
+          metadata: {
+            classId: classId,
+            studentUid: studentUid,
+          },
+        });
+
+        res.json({
+          success: true,
+          clientSecret: paymentIntent.client_secret,
+          paymentIntentId: paymentIntent.id,
+        });
+      } catch (error) {
+        console.error("Error creating payment intent:", error);
+        res.status(500).json({
+          success: false,
+          message: "Failed to create payment intent",
+        });
+      }
+    });
+
+    // Process enrollment after payment confirmation
+    app.post("/process-enrollment", async (req, res) => {
+      try {
+        const {
+          paymentIntentId,
+          classId,
+          studentUid,
+          studentName,
+          studentEmail,
+          amount,
+        } = req.body;
+
+        // Validate required fields
+        if (!paymentIntentId || !classId || !studentUid || !amount) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing required enrollment fields",
+          });
+        }
+
+        // Verify payment intent exists and was successful (optional but recommended)
+        try {
+          const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+          const paymentIntent = await stripe.paymentIntents.retrieve(
+            paymentIntentId
+          );
+
+          if (paymentIntent.status !== "succeeded") {
+            return res.status(400).json({
+              success: false,
+              message: "Payment was not successful",
+            });
+          }
+        } catch (stripeError) {
+          console.error("Error verifying payment intent:", stripeError);
+          return res.status(400).json({
+            success: false,
+            message: "Unable to verify payment",
+          });
+        }
+
+        // Check if class exists and is approved
+        const classesCollection = database.collection("classes");
+        const classData = await classesCollection.findOne({
+          _id: new ObjectId(classId),
+        });
+
+        if (!classData) {
+          return res.status(404).json({
+            success: false,
+            message: "Class not found",
+          });
+        }
+
+        if (classData.status !== "approved") {
+          return res.status(400).json({
+            success: false,
+            message: "Class is not available for enrollment",
+          });
+        }
+
+        // Check if student is already enrolled
+        if (
+          classData.enrolledStudents &&
+          classData.enrolledStudents.includes(studentUid)
+        ) {
+          return res.status(200).json({
+            success: true,
+            message: "Student is already enrolled in this class",
+          });
+        }
+
+        // Store payment transaction
+        const paymentsCollection = database.collection("payments");
+
+        // Check if payment record already exists
+        const existingPayment = await paymentsCollection.findOne({
+          $or: [
+            { stripePaymentIntentId: paymentIntentId },
+            { transactionId: paymentIntentId },
+          ],
+        });
+
+        if (!existingPayment) {
+          const paymentDoc = {
+            stripePaymentIntentId: paymentIntentId,
+            transactionId: paymentIntentId,
+            classId,
+            studentUid,
+            studentName: studentName || "",
+            studentEmail: studentEmail || "",
+            amount: parseFloat(amount),
+            paymentMethod: "stripe",
+            status: "completed",
+            createdAt: new Date(),
+            source: "direct_enrollment",
+          };
+
+          await paymentsCollection.insertOne(paymentDoc);
+        }
+
+        // Add student to class enrollment
+        await classesCollection.updateOne(
+          { _id: new ObjectId(classId) },
+          {
+            $addToSet: { enrolledStudents: studentUid },
+            $set: { updatedAt: new Date() },
+          }
+        );
+
+        res.status(200).json({
+          success: true,
+          message: "Enrollment completed successfully",
+          paymentIntentId,
+        });
+      } catch (error) {
+        console.error("Error processing enrollment:", error);
+        res.status(500).json({
+          success: false,
+          message: "Enrollment processing failed",
+        });
+      }
+    });
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
