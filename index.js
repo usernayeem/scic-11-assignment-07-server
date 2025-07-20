@@ -950,6 +950,175 @@ async function run() {
         });
       }
     });
+
+    // Get submissions for a specific student in a specific class
+    app.get("/submissions/student/:uid/class/:classId", async (req, res) => {
+      try {
+        const { uid, classId } = req.params;
+        const submissionsCollection = database.collection("submissions");
+
+        const submissions = await submissionsCollection
+          .find({
+            studentUid: uid,
+            classId: classId,
+          })
+          .sort({ submittedAt: -1 })
+          .toArray();
+
+        res.json({
+          success: true,
+          submissions,
+        });
+      } catch (error) {
+        console.error("Error fetching student submissions:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Create a new assignment submission
+    app.post("/submissions", async (req, res) => {
+      try {
+        const {
+          assignmentId,
+          classId,
+          studentUid,
+          studentName,
+          studentEmail,
+          submissionText,
+          submittedAt,
+        } = req.body;
+
+        // Validate required fields
+        if (!assignmentId || !classId || !studentUid || !submissionText) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing required fields",
+          });
+        }
+
+        const submissionsCollection = database.collection("submissions");
+
+        // Check if student has already submitted this assignment
+        const existingSubmission = await submissionsCollection.findOne({
+          assignmentId,
+          studentUid,
+        });
+
+        if (existingSubmission) {
+          return res.status(409).json({
+            success: false,
+            message: "You have already submitted this assignment",
+          });
+        }
+
+        // Create submission document
+        const submissionDoc = {
+          assignmentId,
+          classId,
+          studentUid,
+          studentName: studentName || "",
+          studentEmail: studentEmail || "",
+          submissionText,
+          submittedAt: new Date(submittedAt),
+          status: "submitted",
+        };
+
+        const result = await submissionsCollection.insertOne(submissionDoc);
+
+        res.status(201).json({
+          success: true,
+          message: "Assignment submitted successfully",
+          submissionId: result.insertedId,
+        });
+      } catch (error) {
+        console.error("Error creating submission:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Create a new teaching evaluation
+    app.post("/teaching-evaluations", async (req, res) => {
+      try {
+        const {
+          classId,
+          teacherUid,
+          studentUid,
+          studentName,
+          studentEmail,
+          rating,
+          description,
+          submittedAt,
+        } = req.body;
+
+        // Validate required fields
+        if (!classId || !teacherUid || !studentUid || !rating || !description) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing required fields",
+          });
+        }
+
+        // Validate rating range
+        if (rating < 1 || rating > 5) {
+          return res.status(400).json({
+            success: false,
+            message: "Rating must be between 1 and 5",
+          });
+        }
+
+        const teachingEvaluationsCollection = database.collection(
+          "teaching-evaluations"
+        );
+
+        // Check if student has already submitted evaluation for this class
+        const existingEvaluation = await teachingEvaluationsCollection.findOne({
+          classId,
+          studentUid,
+        });
+
+        if (existingEvaluation) {
+          return res.status(409).json({
+            success: false,
+            message: "You have already submitted an evaluation for this class",
+          });
+        }
+
+        // Create evaluation document
+        const evaluationDoc = {
+          classId,
+          teacherUid,
+          studentUid,
+          studentName: studentName || "",
+          studentEmail: studentEmail || "",
+          rating: parseInt(rating),
+          description,
+          submittedAt: new Date(submittedAt),
+          createdAt: new Date(),
+        };
+
+        const result = await teachingEvaluationsCollection.insertOne(
+          evaluationDoc
+        );
+
+        res.status(201).json({
+          success: true,
+          message: "Teaching evaluation submitted successfully",
+          evaluationId: result.insertedId,
+        });
+      } catch (error) {
+        console.error("Error creating teaching evaluation:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
