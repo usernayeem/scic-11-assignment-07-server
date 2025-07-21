@@ -1150,6 +1150,62 @@ async function run() {
         });
       }
     });
+
+    // Get all teaching evaluations (for feedback display)
+    app.get("/teaching-evaluations", async (req, res) => {
+      try {
+        const teachingEvaluationsCollection = database.collection(
+          "teaching-evaluations"
+        );
+        const classesCollection = database.collection("classes");
+        const usersCollection = database.collection("users");
+
+        const evaluations = await teachingEvaluationsCollection
+          .find({})
+          .sort({ submittedAt: -1 })
+          .toArray();
+
+        // Enrich evaluations with class titles and student profile pictures
+        const enrichedEvaluations = await Promise.all(
+          evaluations.map(async (evaluation) => {
+            try {
+              // Get class title
+              const classData = await classesCollection.findOne({
+                _id: new ObjectId(evaluation.classId),
+              });
+
+              // Get student profile picture
+              const studentData = await usersCollection.findOne({
+                uid: evaluation.studentUid,
+              });
+
+              return {
+                ...evaluation,
+                classTitle: classData ? classData.title : "EduManage Course",
+                studentPhotoURL: studentData ? studentData.photoURL : null,
+              };
+            } catch (error) {
+              return {
+                ...evaluation,
+                classTitle: "EduManage Course",
+                studentPhotoURL: null,
+              };
+            }
+          })
+        );
+
+        res.json({
+          success: true,
+          evaluations: enrichedEvaluations,
+        });
+      } catch (error) {
+        console.error("Error fetching teaching evaluations:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
