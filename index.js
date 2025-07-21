@@ -1119,6 +1119,37 @@ async function run() {
         });
       }
     });
+
+    app.get("/classes/popular", async (req, res) => {
+      try {
+        const classesCollection = database.collection("classes");
+        const popularClasses = await classesCollection
+          .aggregate([
+            { $match: { status: "approved" } },
+            {
+              $addFields: {
+                enrollmentCount: {
+                  $size: { $ifNull: ["$enrolledStudents", []] },
+                },
+              },
+            },
+            { $sort: { enrollmentCount: -1 } },
+            { $limit: 6 },
+          ])
+          .toArray();
+
+        res.json({
+          success: true,
+          classes: popularClasses,
+        });
+      } catch (error) {
+        console.error("Error fetching popular classes:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
