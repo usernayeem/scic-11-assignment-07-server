@@ -136,6 +136,80 @@ async function run() {
       }
     });
 
+    // Create teacher application
+    app.post("/teacher-applications", verifyJWT, async (req, res) => {
+      try {
+        const {
+          uid,
+          name,
+          email,
+          photoURL,
+          title,
+          experience,
+          category,
+          status,
+          appliedAt,
+        } = req.body;
+
+        // Validate required fields
+        if (!uid || !name || !email || !title || !experience || !category) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing required fields",
+          });
+        }
+
+        const teacherApplicationsCollection = database.collection(
+          "teacher-applications"
+        );
+
+        // Check if user has already submitted an application
+        const existingApplication = await teacherApplicationsCollection.findOne(
+          {
+            uid: uid,
+          }
+        );
+
+        if (existingApplication) {
+          return res.status(409).json({
+            success: false,
+            message: "You have already submitted a teaching application",
+          });
+        }
+
+        // Create application document
+        const applicationDoc = {
+          uid,
+          name,
+          email,
+          photoURL: photoURL || "",
+          title,
+          experience,
+          category,
+          status: status || "pending",
+          appliedAt: appliedAt ? new Date(appliedAt) : new Date(),
+          createdAt: new Date(),
+        };
+
+        // Insert application into database
+        const result = await teacherApplicationsCollection.insertOne(
+          applicationDoc
+        );
+
+        res.status(201).json({
+          success: true,
+          message: "Teacher application submitted successfully",
+          applicationId: result.insertedId,
+        });
+      } catch (error) {
+        console.error("Error creating teacher application:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
     // Get all teacher applications with pagination
     app.get("/teacher-applications", verifyJWT, async (req, res) => {
       try {
