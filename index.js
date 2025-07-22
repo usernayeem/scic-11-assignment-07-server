@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
@@ -11,6 +12,27 @@ app.use(cors());
 
 // Middleware to parse JSON bodies
 app.use(express.json());
+
+// JWT middleware to verify token
+const verifyJWT = (req, res, next) => {
+  const authorization = req.headers.authorization;
+  if (!authorization) {
+    return res.status(401).json({ message: "No token provided" });
+  }
+
+  const token = authorization.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ message: "No token provided" });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ message: "Invalid token" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(process.env.MONGO_URI, {
@@ -35,6 +57,34 @@ async function run() {
     // Simple route
     app.get("/", (req, res) => {
       res.send("Hello, EduManage");
+    });
+
+    // JWT token creation endpoint
+    app.post("/jwt", async (req, res) => {
+      try {
+        const { email } = req.body;
+
+        if (!email) {
+          return res.status(400).json({ message: "Email is required" });
+        }
+
+        // Create JWT token with email as payload
+        const token = jwt.sign({ email }, process.env.JWT_SECRET, {
+          expiresIn: "7d", // Token expires in 7 days
+        });
+
+        res.status(200).json({ token });
+      } catch (error) {
+        res.status(500).json({ message: "Failed to create token" });
+      }
+    });
+
+    // Verify JWT token endpoint
+    app.get("/verify-jwt", verifyJWT, (req, res) => {
+      res.status(200).json({
+        message: "Token is valid",
+        email: req.decoded.email,
+      });
     });
 
     // User registration endpoint
@@ -87,7 +137,7 @@ async function run() {
     });
 
     // Teacher applications endpoint
-    app.post("/teacher-applications", async (req, res) => {
+    app.post("/teacher-applications", verifyJWT, async (req, res) => {
       try {
         const { uid, name, email, photoURL, title, experience, category } =
           req.body;
@@ -152,7 +202,7 @@ async function run() {
     });
 
     // Get user by UID endpoint
-    app.get("/users/:uid", async (req, res) => {
+    app.get("/users/:uid", verifyJWT, async (req, res) => {
       try {
         const { uid } = req.params;
         const user = await usersCollection.findOne({ uid });
@@ -177,7 +227,7 @@ async function run() {
     });
 
     // Get all teacher applications
-    app.get("/teacher-applications", async (req, res) => {
+    app.get("/teacher-applications", verifyJWT, async (req, res) => {
       try {
         const teacherApplicationsCollection = database.collection(
           "teacher-applications"
@@ -201,7 +251,7 @@ async function run() {
     });
 
     // Update teacher application status
-    app.patch("/teacher-applications/:id", async (req, res) => {
+    app.patch("/teacher-applications/:id", verifyJWT, async (req, res) => {
       try {
         const { id } = req.params;
         const { status } = req.body;
@@ -249,7 +299,7 @@ async function run() {
     });
 
     // Update user role
-    app.patch("/users/:uid", async (req, res) => {
+    app.patch("/users/:uid", verifyJWT, async (req, res) => {
       try {
         const { uid } = req.params;
         const { role } = req.body;
@@ -293,7 +343,7 @@ async function run() {
     });
 
     // Get all users endpoint
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyJWT, async (req, res) => {
       try {
         const users = await usersCollection
           .find({})
@@ -314,7 +364,7 @@ async function run() {
     });
 
     // Create a new class endpoint
-    app.post("/classes", async (req, res) => {
+    app.post("/classes", verifyJWT, async (req, res) => {
       try {
         const {
           title,
@@ -362,7 +412,7 @@ async function run() {
     });
 
     // Get all classes endpoint
-    app.get("/classes", async (req, res) => {
+    app.get("/classes", verifyJWT, async (req, res) => {
       try {
         const classesCollection = database.collection("classes");
         const classes = await classesCollection
@@ -384,7 +434,7 @@ async function run() {
     });
 
     // Get classes by teacher UID
-    app.get("/classes/teacher/:uid", async (req, res) => {
+    app.get("/classes/teacher/:uid", verifyJWT, async (req, res) => {
       try {
         const { uid } = req.params;
         const classesCollection = database.collection("classes");
@@ -407,7 +457,7 @@ async function run() {
     });
 
     // Update class status (for admin approval/rejection)
-    app.patch("/classes/:id", async (req, res) => {
+    app.patch("/classes/:id", verifyJWT, async (req, res) => {
       try {
         const { id } = req.params;
         const { status } = req.body;
@@ -454,7 +504,7 @@ async function run() {
     });
 
     // Delete class endpoint
-    app.delete("/classes/:id", async (req, res) => {
+    app.delete("/classes/:id", verifyJWT, async (req, res) => {
       try {
         const { id } = req.params;
         const classesCollection = database.collection("classes");
@@ -484,7 +534,7 @@ async function run() {
     });
 
     // Update class content (for teachers)
-    app.patch("/classes/:id/content", async (req, res) => {
+    app.patch("/classes/:id/content", verifyJWT, async (req, res) => {
       try {
         const { id } = req.params;
         const { title, price, description, image } = req.body;
@@ -526,7 +576,7 @@ async function run() {
     });
 
     // Get single class by ID
-    app.get("/classes/:id", async (req, res) => {
+    app.get("/classes/:id", verifyJWT, async (req, res) => {
       try {
         const { id } = req.params;
 
@@ -564,7 +614,7 @@ async function run() {
     });
 
     // Process payment and enroll student
-    app.post("/payments", async (req, res) => {
+    app.post("/payments", verifyJWT, async (req, res) => {
       try {
         const {
           classId,
@@ -657,7 +707,7 @@ async function run() {
     });
 
     // Get enrolled classes for a student
-    app.get("/students/:uid/enrolled-classes", async (req, res) => {
+    app.get("/students/:uid/enrolled-classes", verifyJWT, async (req, res) => {
       try {
         const { uid } = req.params;
         const classesCollection = database.collection("classes");
@@ -685,7 +735,7 @@ async function run() {
     });
 
     // Get payment history for a student
-    app.get("/students/:uid/payments", async (req, res) => {
+    app.get("/students/:uid/payments", verifyJWT, async (req, res) => {
       try {
         const { uid } = req.params;
         const paymentsCollection = database.collection("payments");
@@ -707,8 +757,9 @@ async function run() {
         });
       }
     });
+
     // Create payment intent
-    app.post("/create-payment-intent", async (req, res) => {
+    app.post("/create-payment-intent", verifyJWT, async (req, res) => {
       try {
         const { amount, currency = "usd", classId, studentUid } = req.body;
 
@@ -738,7 +789,7 @@ async function run() {
     });
 
     // Process enrollment after payment confirmation
-    app.post("/process-enrollment", async (req, res) => {
+    app.post("/process-enrollment", verifyJWT, async (req, res) => {
       try {
         const {
           paymentIntentId,
@@ -862,7 +913,7 @@ async function run() {
     });
 
     // Create assignment
-    app.post("/assignments", async (req, res) => {
+    app.post("/assignments", verifyJWT, async (req, res) => {
       try {
         const { classId, teacherUid, title, deadline, description, createdAt } =
           req.body;
@@ -904,7 +955,7 @@ async function run() {
     });
 
     // Get assignments for a class
-    app.get("/assignments/class/:classId", async (req, res) => {
+    app.get("/assignments/class/:classId", verifyJWT, async (req, res) => {
       try {
         const { classId } = req.params;
         const assignmentsCollection = database.collection("assignments");
@@ -928,7 +979,7 @@ async function run() {
     });
 
     // Get submissions for a class
-    app.get("/submissions/class/:classId", async (req, res) => {
+    app.get("/submissions/class/:classId", verifyJWT, async (req, res) => {
       try {
         const { classId } = req.params;
         const submissionsCollection = database.collection("submissions");
@@ -952,34 +1003,38 @@ async function run() {
     });
 
     // Get submissions for a specific student in a specific class
-    app.get("/submissions/student/:uid/class/:classId", async (req, res) => {
-      try {
-        const { uid, classId } = req.params;
-        const submissionsCollection = database.collection("submissions");
+    app.get(
+      "/submissions/student/:uid/class/:classId",
+      verifyJWT,
+      async (req, res) => {
+        try {
+          const { uid, classId } = req.params;
+          const submissionsCollection = database.collection("submissions");
 
-        const submissions = await submissionsCollection
-          .find({
-            studentUid: uid,
-            classId: classId,
-          })
-          .sort({ submittedAt: -1 })
-          .toArray();
+          const submissions = await submissionsCollection
+            .find({
+              studentUid: uid,
+              classId: classId,
+            })
+            .sort({ submittedAt: -1 })
+            .toArray();
 
-        res.json({
-          success: true,
-          submissions,
-        });
-      } catch (error) {
-        console.error("Error fetching student submissions:", error);
-        res.status(500).json({
-          success: false,
-          message: "Internal server error",
-        });
+          res.json({
+            success: true,
+            submissions,
+          });
+        } catch (error) {
+          console.error("Error fetching student submissions:", error);
+          res.status(500).json({
+            success: false,
+            message: "Internal server error",
+          });
+        }
       }
-    });
+    );
 
     // Create a new assignment submission
-    app.post("/submissions", async (req, res) => {
+    app.post("/submissions", verifyJWT, async (req, res) => {
       try {
         const {
           assignmentId,
@@ -1043,7 +1098,7 @@ async function run() {
     });
 
     // Create a new teaching evaluation
-    app.post("/teaching-evaluations", async (req, res) => {
+    app.post("/teaching-evaluations", verifyJWT, async (req, res) => {
       try {
         const {
           classId,
@@ -1120,7 +1175,7 @@ async function run() {
       }
     });
 
-    app.get("/classes/popular", async (req, res) => {
+    app.get("/popular-classes", async (req, res) => {
       try {
         const classesCollection = database.collection("classes");
         const popularClasses = await classesCollection
