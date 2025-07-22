@@ -814,24 +814,55 @@ async function run() {
       }
     });
 
-    // Get enrolled classes for a student
+    // Get enrolled classes for a student with pagination
     app.get("/students/:uid/enrolled-classes", verifyJWT, async (req, res) => {
       try {
         const { uid } = req.params;
         const classesCollection = database.collection("classes");
 
-        // Find all classes where the student is enrolled
+        // Extract query parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 5;
+
+        // Validate pagination parameters
+        const validatedPage = Math.max(1, page);
+        const validatedLimit = Math.min(Math.max(1, limit), 100); // Max 100 items per page
+        const skip = (validatedPage - 1) * validatedLimit;
+
+        // Build filter query for enrolled classes
+        const filterQuery = {
+          enrolledStudents: uid,
+          status: "approved",
+        };
+
+        // Get total count for pagination
+        const totalClasses = await classesCollection.countDocuments(
+          filterQuery
+        );
+        const totalPages = Math.ceil(totalClasses / validatedLimit);
+
+        // Fetch enrolled classes with pagination
         const enrolledClasses = await classesCollection
-          .find({
-            enrolledStudents: uid,
-            status: "approved",
-          })
+          .find(filterQuery)
           .sort({ updatedAt: -1 })
+          .skip(skip)
+          .limit(validatedLimit)
           .toArray();
 
         res.json({
           success: true,
           classes: enrolledClasses,
+          pagination: {
+            currentPage: validatedPage,
+            pageSize: validatedLimit,
+            totalClasses,
+            totalPages,
+            hasNextPage: validatedPage < totalPages,
+            hasPrevPage: validatedPage > 1,
+          },
+          // Legacy fields for backward compatibility
+          totalClasses,
+          totalPages,
         });
       } catch (error) {
         console.error("Error fetching enrolled classes:", error);
