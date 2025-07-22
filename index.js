@@ -136,64 +136,52 @@ async function run() {
       }
     });
 
-    // Teacher applications endpoint
-    app.post("/teacher-applications", verifyJWT, async (req, res) => {
+    // Get all teacher applications with pagination
+    app.get("/teacher-applications", verifyJWT, async (req, res) => {
       try {
-        const { uid, name, email, photoURL, title, experience, category } =
-          req.body;
-
-        // Validate required fields
-        if (!uid || !name || !email || !title || !experience || !category) {
-          return res.status(400).json({
-            success: false,
-            message: "Missing required fields",
-          });
-        }
-
-        // Get teacher applications collection
         const teacherApplicationsCollection = database.collection(
           "teacher-applications"
         );
 
-        // Check if user already has a pending or approved application
-        const existingApplication = await teacherApplicationsCollection.findOne(
-          {
-            uid,
-          }
-        );
-        if (existingApplication) {
-          return res.status(409).json({
-            success: false,
-            message: "You have already submitted a teaching application",
-          });
-        }
+        // Extract query parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 5;
 
-        // Create application document
-        const applicationDoc = {
-          uid,
-          name,
-          email,
-          photoURL: photoURL || "",
-          title,
-          experience,
-          category,
-          status: "pending",
-          appliedAt: new Date(),
-          reviewedAt: null,
-          reviewedBy: null,
-        };
+        // Validate pagination parameters
+        const validatedPage = Math.max(1, page);
+        const validatedLimit = Math.min(Math.max(1, limit), 100); // Max 100 items per page
+        const skip = (validatedPage - 1) * validatedLimit;
 
-        // Insert application into database
-        const result = await teacherApplicationsCollection.insertOne(
-          applicationDoc
-        );
+        // Get total count for pagination
+        const totalApplications =
+          await teacherApplicationsCollection.countDocuments({});
+        const totalPages = Math.ceil(totalApplications / validatedLimit);
 
-        res.status(201).json({
+        // Fetch applications with pagination
+        const applications = await teacherApplicationsCollection
+          .find({})
+          .sort({ appliedAt: -1 })
+          .skip(skip)
+          .limit(validatedLimit)
+          .toArray();
+
+        res.json({
           success: true,
-          message: "Teaching application submitted successfully",
-          applicationId: result.insertedId,
+          applications,
+          pagination: {
+            currentPage: validatedPage,
+            pageSize: validatedLimit,
+            totalApplications,
+            totalPages,
+            hasNextPage: validatedPage < totalPages,
+            hasPrevPage: validatedPage > 1,
+          },
+          // Legacy fields for backward compatibility
+          totalApplications,
+          totalPages,
         });
       } catch (error) {
+        console.error("Error fetching teacher applications:", error);
         res.status(500).json({
           success: false,
           message: "Internal server error",
