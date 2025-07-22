@@ -330,17 +330,54 @@ async function run() {
       }
     });
 
-    // Get all users endpoint
+    // Get all users endpoint with pagination and search
     app.get("/users", verifyJWT, async (req, res) => {
       try {
+        // Extract query parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const search = req.query.search || "";
+
+        // Validate pagination parameters
+        const validatedPage = Math.max(1, page);
+        const validatedLimit = Math.min(Math.max(1, limit), 100); // Max 100 items per page
+        const skip = (validatedPage - 1) * validatedLimit;
+
+        // Build filter query
+        let filterQuery = {};
+
+        // Add search functionality
+        if (search.trim()) {
+          const searchRegex = new RegExp(search.trim(), "i"); // Case-insensitive search
+          filterQuery.$or = [{ name: searchRegex }, { email: searchRegex }];
+        }
+
+        // Get total count for pagination
+        const totalUsers = await usersCollection.countDocuments(filterQuery);
+        const totalPages = Math.ceil(totalUsers / validatedLimit);
+
+        // Fetch users with pagination
         const users = await usersCollection
-          .find({})
+          .find(filterQuery)
           .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(validatedLimit)
           .toArray();
 
         res.json({
           success: true,
           users,
+          pagination: {
+            currentPage: validatedPage,
+            pageSize: validatedLimit,
+            totalUsers,
+            totalPages,
+            hasNextPage: validatedPage < totalPages,
+            hasPrevPage: validatedPage > 1,
+          },
+          // Legacy fields for backward compatibility
+          totalUsers,
+          totalPages,
         });
       } catch (error) {
         console.error("Error fetching users:", error);
