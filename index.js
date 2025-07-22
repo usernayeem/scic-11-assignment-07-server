@@ -508,19 +508,52 @@ async function run() {
       }
     });
 
-    // Get classes by teacher UID
+    // Get classes by teacher UID with pagination
     app.get("/classes/teacher/:uid", verifyJWT, async (req, res) => {
       try {
         const { uid } = req.params;
         const classesCollection = database.collection("classes");
+
+        // Extract query parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 6;
+
+        // Validate pagination parameters
+        const validatedPage = Math.max(1, page);
+        const validatedLimit = Math.min(Math.max(1, limit), 100); // Max 100 items per page
+        const skip = (validatedPage - 1) * validatedLimit;
+
+        // Build filter query for teacher's classes
+        const filterQuery = { teacherUid: uid };
+
+        // Get total count for pagination
+        const totalClasses = await classesCollection.countDocuments(
+          filterQuery
+        );
+        const totalPages = Math.ceil(totalClasses / validatedLimit);
+
+        // Fetch classes with pagination
         const classes = await classesCollection
-          .find({ teacherUid: uid })
+          .find(filterQuery)
           .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(validatedLimit)
           .toArray();
 
         res.json({
           success: true,
           classes,
+          pagination: {
+            currentPage: validatedPage,
+            pageSize: validatedLimit,
+            totalClasses,
+            totalPages,
+            hasNextPage: validatedPage < totalPages,
+            hasPrevPage: validatedPage > 1,
+          },
+          // Legacy fields for backward compatibility
+          totalClasses,
+          totalPages,
         });
       } catch (error) {
         console.error("Error fetching teacher classes:", error);
