@@ -411,18 +411,68 @@ async function run() {
       }
     });
 
-    // Get all classes endpoint
+    // Get all classes endpoint with pagination, search, and filtering
     app.get("/classes", verifyJWT, async (req, res) => {
       try {
         const classesCollection = database.collection("classes");
+
+        // Extract query parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const status = req.query.status || null;
+        const search = req.query.search || "";
+
+        // Validate pagination parameters
+        const validatedPage = Math.max(1, page);
+        const validatedLimit = Math.min(Math.max(1, limit), 100); // Max 100 items per page
+        const skip = (validatedPage - 1) * validatedLimit;
+
+        // Build filter query
+        let filterQuery = {};
+
+        // Filter by status if provided
+        if (status) {
+          filterQuery.status = status;
+        }
+
+        // Add search functionality
+        if (search.trim()) {
+          const searchRegex = new RegExp(search.trim(), "i"); // Case-insensitive search
+          filterQuery.$or = [
+            { title: searchRegex },
+            { teacherName: searchRegex },
+            { description: searchRegex },
+          ];
+        }
+
+        // Get total count for pagination
+        const totalClasses = await classesCollection.countDocuments(
+          filterQuery
+        );
+        const totalPages = Math.ceil(totalClasses / validatedLimit);
+
+        // Fetch classes with pagination
         const classes = await classesCollection
-          .find({})
+          .find(filterQuery)
           .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(validatedLimit)
           .toArray();
 
         res.json({
           success: true,
           classes,
+          pagination: {
+            currentPage: validatedPage,
+            pageSize: validatedLimit,
+            totalClasses,
+            totalPages,
+            hasNextPage: validatedPage < totalPages,
+            hasPrevPage: validatedPage > 1,
+          },
+          // Legacy fields for backward compatibility
+          totalClasses,
+          totalPages,
         });
       } catch (error) {
         console.error("Error fetching classes:", error);
@@ -1175,6 +1225,7 @@ async function run() {
       }
     });
 
+    // Get popular classes (no authentication required)
     app.get("/popular-classes", async (req, res) => {
       try {
         const classesCollection = database.collection("classes");
@@ -1206,7 +1257,7 @@ async function run() {
       }
     });
 
-    // Get all teaching evaluations (for feedback display)
+    // Get all teaching evaluations (no authentication required)
     app.get("/teaching-evaluations", async (req, res) => {
       try {
         const teachingEvaluationsCollection = database.collection(
@@ -1255,6 +1306,58 @@ async function run() {
         });
       } catch (error) {
         console.error("Error fetching teaching evaluations:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // Get statistics (no authentication required)
+    app.get("/public-statistics", async (req, res) => {
+      try {
+        // Get total users count
+        const totalUsers = await usersCollection.countDocuments({});
+
+        // Get total approved classes count
+        const classesCollection = database.collection("classes");
+        const totalClasses = await classesCollection.countDocuments({
+          status: "approved",
+        });
+
+        // Get total enrollments across all approved classes
+        const enrollmentData = await classesCollection
+          .aggregate([
+            { $match: { status: "approved" } },
+            {
+              $project: {
+                enrollmentCount: {
+                  $size: { $ifNull: ["$enrolledStudents", []] },
+                },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                totalEnrollments: { $sum: "$enrollmentCount" },
+              },
+            },
+          ])
+          .toArray();
+
+        const totalEnrollments =
+          enrollmentData.length > 0 ? enrollmentData[0].totalEnrollments : 0;
+
+        res.json({
+          success: true,
+          statistics: {
+            totalUsers,
+            totalClasses,
+            totalEnrollments,
+          },
+        });
+      } catch (error) {
+        console.error("Error fetching public statistics:", error);
         res.status(500).json({
           success: false,
           message: "Internal server error",
