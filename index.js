@@ -319,10 +319,11 @@ async function run() {
         const { status } = req.body;
 
         // Validate status
-        if (!["approved", "rejected"].includes(status)) {
+        if (!["approved", "rejected", "pending"].includes(status)) {
           return res.status(400).json({
             success: false,
-            message: "Invalid status. Must be 'approved' or 'rejected'",
+            message:
+              "Invalid status. Must be 'approved', 'rejected', or 'pending'",
           });
         }
 
