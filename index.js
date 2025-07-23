@@ -361,6 +361,58 @@ async function run() {
       }
     });
 
+    // Update teacher application content
+    app.put("/teacher-applications/:id", verifyJWT, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { title, experience, category } = req.body;
+
+        // Validate required fields
+        if (!title || !experience || !category) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing required fields: title, experience, category",
+          });
+        }
+
+        const teacherApplicationsCollection = database.collection(
+          "teacher-applications"
+        );
+
+        const result = await teacherApplicationsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              title,
+              experience,
+              category,
+              status: "pending",
+              resubmittedAt: new Date(),
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Application not found",
+          });
+        }
+
+        res.json({
+          success: true,
+          message: "Application updated and resubmitted successfully",
+        });
+      } catch (error) {
+        console.error("Error updating application content:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
     // Update user role
     app.patch("/users/:uid", verifyJWT, async (req, res) => {
       try {
