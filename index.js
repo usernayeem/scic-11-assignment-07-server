@@ -563,7 +563,7 @@ async function run() {
       }
     });
 
-    // Get all classes endpoint with pagination, search, and filtering
+    // Get all classes endpoint with pagination, search, filtering, and sorting
     app.get("/classes", verifyJWT, async (req, res) => {
       try {
         const classesCollection = database.collection("classes");
@@ -573,6 +573,8 @@ async function run() {
         const limit = parseInt(req.query.limit) || 10;
         const status = req.query.status || null;
         const search = req.query.search || "";
+        const sortBy = req.query.sortBy || "createdAt";
+        const sortOrder = req.query.sortOrder || "desc";
 
         // Validate pagination parameters
         const validatedPage = Math.max(1, page);
@@ -597,16 +599,70 @@ async function run() {
           ];
         }
 
+        // Build sort object
+        let sortObject = {};
+
+        // Handle different sort types
+        if (sortBy === "enrolledStudents") {
+          // For sorting by enrollment count, we need to use aggregation
+          const pipeline = [
+            { $match: filterQuery },
+            {
+              $addFields: {
+                enrollmentCount: {
+                  $size: { $ifNull: ["$enrolledStudents", []] },
+                },
+              },
+            },
+            { $sort: { enrollmentCount: sortOrder === "desc" ? -1 : 1 } },
+            { $skip: skip },
+            { $limit: validatedLimit },
+          ];
+
+          // Get total count for pagination
+          const totalClasses = await classesCollection.countDocuments(
+            filterQuery
+          );
+          const totalPages = Math.ceil(totalClasses / validatedLimit);
+
+          // Execute aggregation pipeline
+          const classes = await classesCollection.aggregate(pipeline).toArray();
+
+          return res.json({
+            success: true,
+            classes,
+            pagination: {
+              currentPage: validatedPage,
+              pageSize: validatedLimit,
+              totalClasses,
+              totalPages,
+              hasNextPage: validatedPage < totalPages,
+              hasPrevPage: validatedPage > 1,
+            },
+            // Legacy fields for backward compatibility
+            totalClasses,
+            totalPages,
+          });
+        } else {
+          // Regular sorting for other fields
+          if (sortBy === "price") {
+            sortObject.price = sortOrder === "desc" ? -1 : 1;
+          } else {
+            // Default to createdAt for any other sortBy value
+            sortObject.createdAt = sortOrder === "desc" ? -1 : 1;
+          }
+        }
+
         // Get total count for pagination
         const totalClasses = await classesCollection.countDocuments(
           filterQuery
         );
         const totalPages = Math.ceil(totalClasses / validatedLimit);
 
-        // Fetch classes with pagination
+        // Fetch classes with pagination and sorting
         const classes = await classesCollection
           .find(filterQuery)
-          .sort({ createdAt: -1 })
+          .sort(sortObject)
           .skip(skip)
           .limit(validatedLimit)
           .toArray();
