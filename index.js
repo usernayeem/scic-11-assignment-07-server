@@ -564,7 +564,7 @@ async function run() {
     });
 
     // Get all classes endpoint with pagination, search, filtering, and sorting
-    app.get("/classes", verifyJWT, async (req, res) => {
+    app.get("/classes", async (req, res) => {
       try {
         const classesCollection = database.collection("classes");
 
